@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>캘린더 백엔드 테스트</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <div class="logo">
+                <h1>📅 캘린더 백엔드 테스트 (Flask MySQL)</h1>
+            </div>
+            <div class="auth-section">
+                <div class="login-form" id="loginForm">
+                    <input type="text" id="loginUserId" placeholder="사용자 ID" style="margin-right: 10px; padding: 8px;">
+                    <input type="password" id="loginPassword" placeholder="비밀번호" style="margin-right: 10px; padding: 8px;">
+                    <button class="login-btn" onclick="login()">로그인</button>
+                    <button class="signup-btn" onclick="showSignupModal()">회원가입</button>
+                </div>
+                <div class="user-info" id="userInfo">
+                    <span id="userName">사용자</span>
+                    <button class="logout-btn" onclick="logout()">로그아웃</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 로그인 전 섹션 -->
+        <div class="login-section" id="loginSection">
+            <h2>🔐 Flask MySQL 백엔드 연동 테스트</h2>
+            <div class="api-test">
+                <h4>🌐 API 연결 상태</h4>
+                <div id="apiStatus" class="api-status error">연결 확인 중...</div>
+            </div>
+            
+            <h3>테스트 계정으로 로그인</h3>
+            <div class="form-group">
+                <label>관리자 테스트 계정:</label>
+                <p><strong>ID:</strong> admin001</p>
+                <p><strong>비밀번호:</strong> admin123</p>
+                <button class="btn" onclick="quickLogin()">관리자 계정으로 로그인</button>
+            </div>
+            
+            <div class="form-group">
+                <label>일반 사용자 계정:</label>
+                <p><strong>ID:</strong> test001</p>
+                <p><strong>비밀번호:</strong> test123</p>
+                <button class="btn" onclick="quickLoginUser()">사용자 계정으로 로그인</button>
+            </div>
+
+            <!-- 회원가입 안내 섹션 -->
+            <div class="form-group signup-section">
+                <label>새 계정 만들기:</label>
+                <p>아직 계정이 없으신가요? 새 계정을 만들어보세요!</p>
+                <button class="btn btn-signup" onclick="showSignupModal()">
+                    👤 새 계정 만들기
+                </button>
+            </div>
+        </div>
+
+        <!-- 로그인 후 메인 콘텐츠 -->
+        <div class="main-content" id="mainContent">
+            <div class="calendar-section">
+                <div class="calendar-header">
+                    <div class="month-nav">
+                        <button class="month-btn" onclick="previousMonth()">‹</button>
+                        <div class="current-month" id="currentMonth">2025년 7월</div>
+                        <button class="month-btn" onclick="nextMonth()">›</button>
+                    </div>
+                    <button class="btn" onclick="showAddEventModal()">일정 추가</button>
+                </div>
+
+                <div class="calendar-grid" id="calendarGrid">
+                    <div class="day-header">일</div>
+                    <div class="day-header">월</div>
+                    <div class="day-header">화</div>
+                    <div class="day-header">수</div>
+                    <div class="day-header">목</div>
+                    <div class="day-header">금</div>
+                    <div class="day-header">토</div>
+                </div>
+            </div>
+
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <h3>📊 Flask MySQL 백엔드 정보</h3>
+                    <div id="backendInfo">
+                        <p><strong>사용자:</strong> <span id="currentUser">-</span></p>
+                        <p><strong>권한:</strong> <span id="userType">-</span></p>
+                        <p><strong>캘린더 수:</strong> <span id="calendarCount">-</span></p>
+                        <p><strong>일정 수:</strong> <span id="scheduleCount">-</span></p>
+                    </div>
+                    <button class="btn" onclick="refreshData()">데이터 새로고침</button>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>📅 캘린더 선택</h3>
+                    <select id="calendarSelect" onchange="loadSchedules()">
+                        <option value="">캘린더를 선택하세요</option>
+                    </select>
+                    <button class="btn" onclick="createCalendar()" style="margin-top: 10px;">새 캘린더 만들기</button>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>📝 빠른 일정 추가</h3>
+                    <form id="quickEventForm">
+                        <div class="form-group">
+                            <label>제목</label>
+                            <input type="text" id="quickTitle" required>
+                        </div>
+                        <div class="form-group">
+                            <label>날짜</label>
+                            <input type="date" id="quickDate" required>
+                        </div>
+                        <div class="form-group">
+                            <label>시간</label>
+                            <input type="time" id="quickTime" value="09:00">
+                        </div>
+                        <button type="submit" class="btn">추가</button>
+                    </form>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>🔔 오늘의 일정</h3>
+                    <div id="todayEvents">
+                        <p>오늘 일정이 없습니다.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 회원가입 모달 -->
+    <div id="signupModal" class="modal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeModal('signupModal')">&times;</button>
+            <h3>🎉 새 계정 만들기</h3>
+            <p class="modal-subtitle">Flask MySQL 캘린더에 오신 것을 환영합니다!</p>
+            
+            <form id="signupForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>사용자 ID *</label>
+                        <input type="text" id="signupUserId" required minlength="4" maxlength="20" 
+                               pattern="[a-zA-Z0-9_]+" placeholder="영문, 숫자, _ 사용 (4-20자)">
+                        <small class="form-hint">영문자, 숫자, 언더스코어(_)만 사용 가능합니다.</small>
+                    </div>
+                    <div class="form-group">
+                        <label>이름 *</label>
+                        <input type="text" id="signupName" required maxlength="50" placeholder="실명을 입력하세요">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>이메일 주소 *</label>
+                    <input type="email" id="signupEmail" required placeholder="example@email.com">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>비밀번호 *</label>
+                        <input type="password" id="signupPassword" required minlength="6" 
+                               placeholder="6자 이상 입력">
+                    </div>
+                    <div class="form-group">
+                        <label>비밀번호 확인 *</label>
+                        <input type="password" id="signupPasswordConfirm" required 
+                               placeholder="비밀번호를 다시 입력">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>전화번호 (선택)</label>
+                        <input type="tel" id="signupPhone" placeholder="010-1234-5678">
+                    </div>
+                    <div class="form-group">
+                        <label>계정 유형</label>
+                        <select id="signupUserType">
+                            <option value="user">일반 사용자</option>
+                            <option value="admin">관리자</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>자기소개 (선택)</label>
+                    <textarea id="signupProfile" placeholder="간단한 자기소개를 입력하세요" rows="3"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('signupModal')">
+                        취소
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        🚀 계정 만들기
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 일정 추가 모달 -->
+    <div id="addEventModal" class="modal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeModal('addEventModal')">&times;</button>
+            <h3>새 일정 추가</h3>
+            <form id="addEventForm">
+                <div class="form-group">
+                    <label>제목</label>
+                    <input type="text" id="eventTitle" required>
+                </div>
+                <div class="form-group">
+                    <label>설명</label>
+                    <textarea id="eventDescription"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>시작 날짜/시간</label>
+                    <input type="datetime-local" id="eventStartDate" required>
+                </div>
+                <div class="form-group">
+                    <label>종료 날짜/시간</label>
+                    <input type="datetime-local" id="eventEndDate" required>
+                </div>
+                <div class="form-group">
+                    <label>장소</label>
+                    <input type="text" id="eventLocation">
+                </div>
+                <div class="form-group">
+                    <label>색상</label>
+                    <input type="color" id="eventColor" value="#667eea">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="eventNotification"> 알림 설정
+                    </label>
+                </div>
+                <button type="submit" class="btn">저장</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="message" class="message" style="display: none;"></div>
+
+    <script>
+        // Flask 환경에 맞게 API 베이스 URL 설정
+        window.API_BASE = 'http://localhost:5000/api';
+    </script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
