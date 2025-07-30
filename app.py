@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import text  # 이 줄 추가
+from sqlalchemy import text  
 from datetime import datetime, date, time
 import json
 import uuid
@@ -869,12 +869,8 @@ def get_schedules_by_calendar(calendar_id):
             print("❌ 캘린더 없음")
             return jsonify({'success': False, 'message': '캘린더를 찾을 수 없습니다.'}), 404
         
-        # 캘린더 소유자 확인
-        if calendar.user_id != user.id:
-            print("❌ 캘린더 접근 권한 없음")
-            return jsonify({'success': False, 'message': '캘린더에 접근할 권한이 없습니다.'}), 403
-        
-        print("🔟 일정 검색 중...")
+        # ✅ 수정: 캘린더 소유자 확인 제거 - 모든 캘린더의 일정을 볼 수 있도록
+        print("🔟 일정 검색 중... (모든 일정 표시)")
         schedules = Schedule.query.filter_by(calendar_id=calendar.id).all()
         print(f"1️⃣1️⃣ 찾은 일정 수: {len(schedules)}")
         
@@ -882,6 +878,9 @@ def get_schedules_by_calendar(calendar_id):
         for schedule in schedules:
             start_datetime = datetime.combine(schedule.date_info, schedule.start_time)
             end_datetime = datetime.combine(schedule.date_info, schedule.end_time)
+            
+            # 캘린더 소유자 정보 추가
+            calendar_owner = User.query.get(calendar.user_id)
             
             # 기존 JSON 구조와 호환되도록 수정
             location_str = ""
@@ -898,6 +897,9 @@ def get_schedules_by_calendar(calendar_id):
                 else:
                     participants_str = str(schedule.participants_data)
             
+            # ✅ 내 일정인지 확인하여 색상 구분
+            is_my_schedule = calendar.user_id == user.id
+            
             schedule_data = {
                 'id': schedule.schedule_id,
                 'title': schedule.title,
@@ -907,12 +909,15 @@ def get_schedules_by_calendar(calendar_id):
                 'end_time': end_datetime.isoformat(),
                 'endTime': end_datetime.isoformat(),
                 'location': location_str,
-                'color': '#667eea',
+                'color': '#667eea' if is_my_schedule else '#10b981',  # 내 일정 파란색, 다른 사람 초록색
                 'notification': True,
                 'importance': schedule.importance,
                 'participants': participants_str,
                 'notes': schedule.notes,
-                'tags': schedule.tags
+                'tags': schedule.tags,
+                'is_my_schedule': is_my_schedule,
+                'owner_name': calendar_owner.name if calendar_owner else 'Unknown',
+                'owner_id': calendar_owner.user_id if calendar_owner else 'Unknown'
             }
             schedule_list.append(schedule_data)
             print(f"1️⃣2️⃣ 일정 추가: {schedule_data}")
@@ -1149,9 +1154,8 @@ def create_schedule_by_calendar_code(calendar_code):
         print(f"❌ 일정 생성 오류: {e}")
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
-    
 
-# 사용자별 일정 조회 API (test_api.py용)  
+# ✅ 핵심 수정: 사용자별 일정 조회 API - 모든 일정 표시
 @app.route('/api/users/<user_id>/schedules', methods=['GET'])
 def get_user_schedules(user_id):
     print(f"\n=== 📝 사용자별 일정 조회: {user_id} ===")
@@ -1161,13 +1165,18 @@ def get_user_schedules(user_id):
         if not user:
             return jsonify({'success': False, 'message': '사용자를 찾을 수 없습니다.'}), 404
         
-        # 사용자의 모든 캘린더 조회
-        calendars = Calendar.query.filter_by(user_id=user.id).all()
+        # ✅ 수정: 모든 캘린더의 일정을 조회 (사용자 구분 없이)
+        print("📅 모든 캘린더의 일정 조회 중...")
+        all_calendars = Calendar.query.all()  # 기존: Calendar.query.filter_by(user_id=user.id).all()
+        print(f"찾은 캘린더 수: {len(all_calendars)}")
         
         all_schedules = []
-        for calendar in calendars:
+        for calendar in all_calendars:
             schedules = Schedule.query.filter_by(calendar_id=calendar.id).all()
             for schedule in schedules:
+                # 캘린더 소유자 정보 추가
+                owner = User.query.get(calendar.user_id)
+                
                 start_datetime = datetime.combine(schedule.date_info, schedule.start_time)
                 end_datetime = datetime.combine(schedule.date_info, schedule.end_time)
                 
@@ -1187,9 +1196,14 @@ def get_user_schedules(user_id):
                     'importance': schedule.importance,
                     'notes': schedule.notes,
                     'calendar_name': calendar.calendar_name,
-                    'calendar_code': calendar.calendar_code
+                    'calendar_code': calendar.calendar_code,
+                    'owner_name': owner.name if owner else 'Unknown',  # 소유자 정보 추가
+                    'owner_id': owner.user_id if owner else 'Unknown',
+                    'is_my_schedule': calendar.user_id == user.id  # 내 일정인지 표시
                 }
                 all_schedules.append(schedule_data)
+        
+        print(f"✅ 총 {len(all_schedules)}개 일정 조회 완료 (모든 사용자 포함)")
         
         return jsonify({
             'success': True,
@@ -1204,12 +1218,325 @@ def get_user_schedules(user_id):
         print(f"❌ 일정 조회 오류: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# 특정 일정 조회 API (schedule_id로 조회)
+@app.route('/api/schedules/<schedule_id>', methods=['GET'])
+def get_schedule_by_id(schedule_id):
+    print(f"\n=== 📝 특정 일정 조회: {schedule_id} ===")
+    try:
+        # 일정 검색
+        schedule = Schedule.query.filter_by(schedule_id=schedule_id).first()
+        
+        if not schedule:
+            print("❌ 일정 없음")
+            return jsonify({
+                'success': False,
+                'message': '일정을 찾을 수 없습니다.'
+            }), 404
+        
+        # 캘린더 및 소유자 정보 조회
+        calendar = Calendar.query.get(schedule.calendar_id)
+        owner = User.query.get(calendar.user_id) if calendar else None
+        
+        start_datetime = datetime.combine(schedule.date_info, schedule.start_time)
+        end_datetime = datetime.combine(schedule.date_info, schedule.end_time)
+        
+        schedule_data = {
+            'schedule_id': schedule.schedule_id,
+            'title': schedule.title,
+            'description': schedule.description,
+            'date_info': schedule.date_info.isoformat(),
+            'start_time': schedule.start_time.strftime('%H:%M'),
+            'end_time': schedule.end_time.strftime('%H:%M'),
+            'start_datetime': start_datetime.isoformat(),
+            'end_datetime': end_datetime.isoformat(),
+            'location': schedule.location_data,
+            'participants': schedule.participants_data,
+            'estimated_cost': schedule.estimated_cost,
+            'tags': schedule.tags,
+            'importance': schedule.importance,
+            'notes': schedule.notes,
+            'calendar_name': calendar.calendar_name if calendar else 'Unknown',
+            'calendar_code': calendar.calendar_code if calendar else 'Unknown',
+            'owner_name': owner.name if owner else 'Unknown',
+            'owner_id': owner.user_id if owner else 'Unknown'
+        }
+        
+        print(f"✅ 일정 조회 성공: {schedule.title}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'schedule': schedule_data
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ 특정 일정 조회 오류: {e}")
+        return jsonify({
+            'success': False,
+            'message': '일정 조회 중 오류 발생',
+            'error': str(e)
+        }), 500
+    # app.py 파일에 추가할 일정 삭제 API (다른 라우트들과 함께 추가)
+
+# 일정 삭제 API (프론트엔드용)
+@app.route('/api/schedules/<schedule_id>', methods=['DELETE'])
+def delete_schedule(schedule_id):
+    print(f"\n=== 🗑️ 일정 삭제 시작: {schedule_id} ===")
+    try:
+        print("1️⃣ 인증 헤더 확인 중...")
+        auth_header = request.headers.get('Authorization')
+        
+        if not auth_header:
+            print("❌ 인증 헤더 없음")
+            return jsonify({'success': False, 'message': '인증 토큰이 필요합니다.'}), 401
+        
+        print("2️⃣ 토큰 파싱 중...")
+        token = auth_header.replace('Bearer ', '')
+        user_id = extract_user_id_from_token(token)
+        print(f"3️⃣ 추출된 사용자 ID: {user_id}")
+        
+        if not user_id:
+            print("❌ 토큰에서 사용자 ID 추출 실패")
+            return jsonify({'success': False, 'message': '유효하지 않은 토큰입니다.'}), 401
+        
+        print("4️⃣ 사용자 검색 중...")
+        user = User.query.filter_by(user_id=user_id).first()
+        
+        if not user:
+            print("❌ 사용자 없음")
+            return jsonify({'success': False, 'message': '사용자를 찾을 수 없습니다.'}), 404
+        
+        print("5️⃣ 일정 검색 중...")
+        schedule = Schedule.query.filter_by(schedule_id=schedule_id).first()
+        print(f"6️⃣ 일정 검색 결과: {schedule}")
+        
+        if not schedule:
+            print("❌ 일정 없음")
+            return jsonify({'success': False, 'message': '일정을 찾을 수 없습니다.'}), 404
+        
+        # 일정 소유자 확인
+        print("7️⃣ 일정 소유자 확인 중...")
+        calendar = Calendar.query.get(schedule.calendar_id)
+        if not calendar or calendar.user_id != user.id:
+            print("❌ 일정 삭제 권한 없음")
+            return jsonify({'success': False, 'message': '이 일정을 삭제할 권한이 없습니다.'}), 403
+        
+        schedule_title = schedule.title
+        
+        print("8️⃣ 일정 삭제 중...")
+        db.session.delete(schedule)
+        db.session.commit()
+        print(f"9️⃣ 일정 삭제 완료: {schedule_title}")
+        
+        response_data = {
+            'success': True,
+            'message': f'일정 "{schedule_title}"이 삭제되었습니다.',
+            'data': {
+                'deleted_schedule': schedule_title,
+                'schedule_id': schedule_id
+            }
+        }
+        print(f"✅ 최종 응답: {response_data}")
+        return jsonify(response_data), 200
+        
+    except Exception as e:
+        print(f"❌ 일정 삭제 오류: {e}")
+        print(f"❌ 오류 상세: {repr(e)}")
+        db.session.rollback()  # 오류 시 롤백
+        return jsonify({
+            'success': False,
+            'message': '일정 삭제 중 오류 발생',
+            'error': str(e)
+        }), 500
+    # app.py에 추가할 함수 (기존 코드 끝 부분에 추가)
+
+def create_initial_data():
+    """앱 시작 시 초기 샘플 데이터 생성"""
+    print("🎯 초기 샘플 데이터 확인 중...")
+    
+    try:
+        # sch_001 사용자가 있는지 확인
+        sch_user = User.query.filter_by(user_id='sch_001').first()
+        
+        if not sch_user:
+            print("📝 sch_001 사용자 생성 중...")
+            # sch_001 사용자 생성
+            sch_user = User(
+                user_id='sch_001',
+                name='조정후',
+                email='jeonghoo@example.com',
+                user_type='user',
+                phone='010-2345-6789',
+                profile='UX/UI 디자이너'
+            )
+            sch_user.set_password('user123')
+            db.session.add(sch_user)
+            db.session.flush()
+            print("✅ sch_001 사용자 생성 완료")
+        
+        # sch_001의 캘린더 확인
+        sch_calendar = Calendar.query.filter_by(user_id=sch_user.id, calendar_code='sample_sch_personal').first()
+        
+        if not sch_calendar:
+            print("📅 sch_001 샘플 캘린더 생성 중...")
+            sch_calendar = Calendar(
+                calendar_code='sample_sch_personal',
+                calendar_name='조정후 개인 일정',
+                description='조정후의 개인적인 약속과 디자인 작업',
+                user_id=sch_user.id
+            )
+            db.session.add(sch_calendar)
+            db.session.flush()
+            print("✅ sch_001 캘린더 생성 완료")
+        
+        # sch_001의 샘플 일정들 확인
+        existing_schedules = Schedule.query.filter_by(calendar_id=sch_calendar.id).count()
+        
+        if existing_schedules < 3:  # 샘플 일정이 3개 미만이면 생성
+            print("📝 sch_001 샘플 일정 생성 중...")
+            
+            sample_schedules = [
+                {
+                    'schedule_id': 'auto_sch_design_001',
+                    'date_info': date(2025, 8, 6),
+                    'start_time': time(9, 0),
+                    'end_time': time(12, 0),
+                    'title': '🎨 피그마 UI 디자인 작업',
+                    'description': 'E-commerce 앱 메인 화면 디자인 작업',
+                    'location_data': {'name': '홈 오피스', 'address': '서울시 강남구 집'},
+                    'participants_data': [],
+                    'estimated_cost': 0,
+                    'tags': ['디자인', '피그마', 'UI/UX'],
+                    'importance': 8,
+                    'notes': '모바일 우선 디자인으로 진행'
+                },
+                {
+                    'schedule_id': 'auto_sch_meeting_001',
+                    'date_info': date(2025, 8, 7),
+                    'start_time': time(14, 0),
+                    'end_time': time(16, 0),
+                    'title': '🤝 클라이언트 미팅',
+                    'description': 'ABC 회사 웹사이트 리뉴얼 프로젝트 논의',
+                    'location_data': {'name': 'ABC 회사', 'address': '서울시 강남구 테헤란로 456'},
+                    'participants_data': [{'name': '김대표', 'contact': '010-1111-2222', 'relation': '클라이언트'}],
+                    'estimated_cost': 50000,
+                    'tags': ['미팅', '클라이언트', '웹디자인'],
+                    'importance': 9,
+                    'notes': '포트폴리오 준비하기'
+                },
+                {
+                    'schedule_id': 'auto_sch_study_001',
+                    'date_info': date(2025, 8, 8),
+                    'start_time': time(10, 30),
+                    'end_time': time(11, 30),
+                    'title': '📚 디자인 시스템 스터디',
+                    'description': '동료 디자이너들과 디자인 시스템 공부',
+                    'location_data': {'name': '카페 봄', 'address': '서울시 강남구 논현로 123'},
+                    'participants_data': [{'name': '이수정', 'contact': '010-3333-4444', 'relation': '동료'}],
+                    'estimated_cost': 15000,
+                    'tags': ['스터디', '디자인시스템', '동료'],
+                    'importance': 7,
+                    'notes': '아토믹 디자인 방법론 리뷰'
+                },
+                {
+                    'schedule_id': 'auto_sch_chicken_001',
+                    'date_info': date(2025, 8, 9),
+                    'start_time': time(19, 0),
+                    'end_time': time(21, 0),
+                    'title': '🍗 친구들과 치킨 파티',
+                    'description': '대학 동기들과 오랜만에 만나는 날',
+                    'location_data': {'name': '교촌치킨 강남점', 'address': '서울시 강남구 테헤란로 789'},
+                    'participants_data': [
+                        {'name': '지훈', 'contact': '010-5555-6666', 'relation': '대학동기'},
+                        {'name': '민서', 'contact': '010-7777-8888', 'relation': '대학동기'}
+                    ],
+                    'estimated_cost': 35000,
+                    'tags': ['친구', '치킨', '대학동기'],
+                    'importance': 6,
+                    'notes': '지훈이 승진 축하하기'
+                },
+                {
+                    'schedule_id': 'auto_sch_workout_001',
+                    'date_info': date(2025, 8, 10),
+                    'start_time': time(7, 0),
+                    'end_time': time(8, 30),
+                    'title': '💪 헬스장 운동',
+                    'description': '주말 아침 운동 루틴',
+                    'location_data': {'name': '라이프 피트니스', 'address': '서울시 강남구 역삼로 456'},
+                    'participants_data': [],
+                    'estimated_cost': 0,
+                    'tags': ['운동', '헬스', '건강'],
+                    'importance': 5,
+                    'notes': '하체 운동 집중'
+                }
+            ]
+            
+            created_count = 0
+            for sch_data in sample_schedules:
+                # 중복 확인
+                existing = Schedule.query.filter_by(schedule_id=sch_data['schedule_id']).first()
+                if not existing:
+                    new_schedule = Schedule(
+                        schedule_id=sch_data['schedule_id'],
+                        date_info=sch_data['date_info'],
+                        start_time=sch_data['start_time'],
+                        end_time=sch_data['end_time'],
+                        title=sch_data['title'],
+                        description=sch_data['description'],
+                        location_data=sch_data['location_data'],
+                        participants_data=sch_data['participants_data'],
+                        estimated_cost=sch_data['estimated_cost'],
+                        tags=sch_data['tags'],
+                        importance=sch_data['importance'],
+                        notes=sch_data['notes'],
+                        calendar_id=sch_calendar.id
+                    )
+                    db.session.add(new_schedule)
+                    created_count += 1
+            
+            if created_count > 0:
+                db.session.commit()
+                print(f"✅ sch_001 샘플 일정 {created_count}개 생성 완료")
+            else:
+                print("⚡ sch_001 샘플 일정이 이미 존재함")
+        else:
+            print("⚡ sch_001 샘플 일정이 충분히 존재함")
+        
+        # 다른 사용자들도 필요하면 추가
+        admin_user = User.query.filter_by(user_id='admin001').first()
+        if not admin_user:
+            print("📝 admin001 사용자 생성 중...")
+            admin_user = User(
+                user_id='admin001',
+                name='관리자',
+                email='admin@example.com',
+                user_type='admin',
+                phone='010-1234-5678',
+                profile='시스템 관리자'
+            )
+            admin_user.set_password('admin123')
+            db.session.add(admin_user)
+            db.session.commit()
+            print("✅ admin001 사용자 생성 완료")
+        
+        print("🎉 초기 데이터 확인/생성 완료!")
+        
+    except Exception as e:
+        print(f"❌ 초기 데이터 생성 오류: {e}")
+        db.session.rollback()
+
+# app.py의 메인 실행 부분에 추가 (if __name__ == '__main__': 부분)
 if __name__ == '__main__':
     print("\n=== 🏁 메인 실행 시작 ===")
     try:
         with app.app_context():
             print("1️⃣ 앱 컨텍스트 생성")
             print("2️⃣ 기존 데이터베이스 사용 (테이블 생성 생략)")
+            
+            # 🎯 초기 샘플 데이터 생성 추가
+            create_initial_data()
+            
     except Exception as e:
         print(f"❌ 초기화 중 오류: {e}")
         print(f"❌ 오류 상세: {repr(e)}")

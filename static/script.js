@@ -409,7 +409,7 @@ async function loadCalendars() {
     }
 }
 
-// 일정 목록 로드
+// ✅ 수정된 일정 목록 로드 - 모든 일정 표시
 async function loadSchedules() {
     const selectElement = document.getElementById('calendarSelect');
     currentCalendarId = selectElement.value;
@@ -495,7 +495,7 @@ async function createCalendar() {
     }
 }
 
-// 캘린더 렌더링
+// ✅ 수정된 캘린더 렌더링 - 일정 소유자별 색상 구분
 function renderCalendar() {
     console.log('=== 캘린더 렌더링 시작 ===');
     console.log('현재 일정 개수:', schedules.length);
@@ -543,8 +543,26 @@ function renderCalendar() {
         daySchedules.forEach(schedule => {
             const eventEl = document.createElement('div');
             eventEl.className = 'event-item';
-            eventEl.style.backgroundColor = schedule.color || '#667eea';
-            eventEl.textContent = schedule.title;
+            
+            // ✅ 일정 소유자에 따라 다른 스타일 적용
+            if (schedule.is_my_schedule) {
+                eventEl.style.backgroundColor = '#667eea';  // 내 일정 - 파란색
+                eventEl.style.borderLeft = '3px solid #4338ca';
+                eventEl.title = `${schedule.title} (내 일정)`;
+            } else {
+                eventEl.style.backgroundColor = '#10b981';  // 다른 사람 일정 - 초록색
+                eventEl.style.borderLeft = '3px solid #059669';
+                eventEl.title = `${schedule.title} (${schedule.owner_name}님의 일정)`;
+            }
+            
+            // 일정 제목과 소유자 표시
+            eventEl.innerHTML = `
+                <div style="font-size: 10px; line-height: 12px;">
+                    <div style="font-weight: bold;">${schedule.title}</div>
+                    ${!schedule.is_my_schedule ? `<div style="opacity: 0.8; font-size: 9px;">${schedule.owner_name}</div>` : ''}
+                </div>
+            `;
+            
             eventEl.onclick = () => showEventDetails(schedule);
             dayCell.appendChild(eventEl);
             totalEventsAdded++;
@@ -557,7 +575,7 @@ function renderCalendar() {
     console.log(`✅ 캘린더 렌더링 완료 - 총 ${totalEventsAdded}개 일정 표시`);
 }
 
-// 오늘의 일정 로드
+// ✅ 오늘의 일정 로드 (소유자 정보 포함)
 function loadTodayEvents() {
     const today = new Date();
     const todaySchedules = schedules.filter(schedule => {
@@ -574,8 +592,15 @@ function loadTodayEvents() {
                 hour: '2-digit',
                 minute: '2-digit'
             });
-            return `<div class="event-item" style="margin-bottom: 5px; background: ${schedule.color || '#667eea'}">
-                ${time} - ${schedule.title}
+            
+            const ownerInfo = schedule.is_my_schedule ? '내 일정' : schedule.owner_name;
+            const backgroundColor = schedule.is_my_schedule ? '#667eea' : '#10b981';
+            
+            return `<div class="event-item" style="margin-bottom: 5px; background: ${backgroundColor}; border-left: 3px solid ${schedule.is_my_schedule ? '#4338ca' : '#059669'}">
+                <div style="font-size: 11px;">
+                    <strong>${time} - ${schedule.title}</strong>
+                    <div style="font-size: 9px; opacity: 0.8;">${ownerInfo}</div>
+                </div>
             </div>`;
         }).join('');
     }
@@ -716,12 +741,166 @@ document.getElementById('quickEventForm').addEventListener('submit', async funct
     }
 });
 
-// 일정 세부정보 표시
+// script.js에서 기존 showEventDetails 함수를 찾아서 
+// 아래 코드로 완전히 교체하세요
+
+// ✅ 개선된 일정 세부정보 모달 표시 (삭제 기능 포함)
 function showEventDetails(schedule) {
     const startDate = new Date(schedule.start_time || schedule.startTime).toLocaleString('ko-KR');
     const endDate = new Date(schedule.end_time || schedule.endTime).toLocaleString('ko-KR');
     
-    alert(`📅 ${schedule.title}\n\n📝 ${schedule.description || '설명 없음'}\n\n⏰ ${startDate} ~ ${endDate}\n\n📍 ${schedule.location || '장소 없음'}\n\n💾 Flask MySQL에서 로드됨`);
+    const ownerInfo = schedule.is_my_schedule ? '내 일정' : `${schedule.owner_name}님의 일정`;
+    const calendarInfo = schedule.calendar_name ? schedule.calendar_name : '';
+    
+    // 삭제 버튼은 내 일정일 때만 표시
+    const deleteButton = schedule.is_my_schedule ? 
+        `<button onclick="deleteScheduleFromModal('${schedule.id}')" class="btn" style="background: #dc2626; border-color: #dc2626; color: white; margin-left: 10px;">
+            🗑️ 삭제
+        </button>` : '';
+    
+    const modalHtml = `
+        <div id="eventDetailModal" class="modal" style="display: block;">
+            <div class="modal-content">
+                <button class="close-modal" onclick="closeModal('eventDetailModal')">&times;</button>
+                
+                <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                    <div style="width: 20px; height: 20px; background: ${schedule.color || '#667eea'}; border-radius: 50%; margin-right: 10px;"></div>
+                    <h3 style="margin: 0;">${schedule.title}</h3>
+                </div>
+                
+                <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        
+                        <div style="display: flex; align-items: center;">
+                            <span style="width: 80px; font-weight: bold; color: #374151;">👤 소유자:</span>
+                            <span>${ownerInfo}</span>
+                        </div>
+                        
+                        <div style="display: flex; align-items: center;">
+                            <span style="width: 80px; font-weight: bold; color: #374151;">📅 캘린더:</span>
+                            <span>${calendarInfo}</span>
+                        </div>
+                        
+                        <div style="display: flex; align-items: center;">
+                            <span style="width: 80px; font-weight: bold; color: #374151;">🕐 시작:</span>
+                            <span>${startDate}</span>
+                        </div>
+                        
+                        <div style="display: flex; align-items: center;">
+                            <span style="width: 80px; font-weight: bold; color: #374151;">🕐 종료:</span>
+                            <span>${endDate}</span>
+                        </div>
+                        
+                        ${schedule.location ? `
+                        <div style="display: flex; align-items: center;">
+                            <span style="width: 80px; font-weight: bold; color: #374151;">📍 장소:</span>
+                            <span>${schedule.location}</span>
+                        </div>
+                        ` : ''}
+                        
+                        ${schedule.description ? `
+                        <div style="display: flex; align-items: flex-start;">
+                            <span style="width: 80px; font-weight: bold; color: #374151;">📝 설명:</span>
+                            <span style="line-height: 1.4;">${schedule.description}</span>
+                        </div>
+                        ` : ''}
+                        
+                        ${schedule.participants ? `
+                        <div style="display: flex; align-items: center;">
+                            <span style="width: 80px; font-weight: bold; color: #374151;">👥 참석자:</span>
+                            <span>${schedule.participants}</span>
+                        </div>
+                        ` : ''}
+                        
+                        ${schedule.importance ? `
+                        <div style="display: flex; align-items: center;">
+                            <span style="width: 80px; font-weight: bold; color: #374151;">⭐ 중요도:</span>
+                            <span>${'★'.repeat(Math.min(schedule.importance, 10))}</span>
+                        </div>
+                        ` : ''}
+                        
+                        ${schedule.notes ? `
+                        <div style="display: flex; align-items: flex-start;">
+                            <span style="width: 80px; font-weight: bold; color: #374151;">📌 메모:</span>
+                            <span style="line-height: 1.4;">${schedule.notes}</span>
+                        </div>
+                        ` : ''}
+                        
+                    </div>
+                </div>
+                
+                <div style="text-align: center; font-size: 12px; color: #6b7280; margin-bottom: 20px;">
+                    💾 Flask MySQL에서 로드됨
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('eventDetailModal')">
+                        확인
+                    </button>
+                    ${deleteButton}
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // 기존 모달이 있다면 제거
+    const existingModal = document.getElementById('eventDetailModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    // 새 모달 추가
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+// 일정 삭제 함수 (모달에서 호출) - 새로 추가하는 함수
+async function deleteScheduleFromModal(scheduleId) {
+    const confirmed = confirm('⚠️ 이 일정을 삭제하시겠습니까?\n\n삭제된 일정은 복구할 수 없습니다.');
+    
+    if (!confirmed) {
+        return;
+    }
+    
+    try {
+        console.log(`일정 삭제 시도: ${scheduleId}`);
+        showMessage('🗑️ 일정을 삭제하는 중...', 'info');
+        
+        // 일정이 속한 캘린더 찾기
+        const schedule = schedules.find(s => s.id === scheduleId);
+        if (!schedule) {
+            showMessage('❌ 일정을 찾을 수 없습니다.', 'error');
+            return;
+        }
+        
+        // 일정 삭제 API 호출 (DELETE 방식)
+        const response = await fetch(`${API_BASE}/schedules/${scheduleId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        console.log('일정 삭제 응답:', result);
+        
+        if (result.success || response.ok) {
+            showMessage('✅ 일정이 삭제되었습니다!', 'success');
+            
+            // 모달 닫기
+            closeModal('eventDetailModal');
+            
+            // 일정 목록 새로고침
+            await loadSchedules();
+            
+        } else {
+            showMessage(`❌ ${result.message || '일정 삭제에 실패했습니다.'}`, 'error');
+        }
+        
+    } catch (error) {
+        console.error('일정 삭제 오류:', error);
+        showMessage('🚫 일정 삭제 중 오류가 발생했습니다.', 'error');
+    }
 }
 
 // 데이터 새로고침
