@@ -165,30 +165,40 @@ body {
     color: #333;
 }
 
+/* 🔧 핵심 수정: 캘린더 그리드 레이아웃 */
 .calendar-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     gap: 1px;
-    background: #ddd;
+    background: #e5e7eb;
+    border: 1px solid #d1d5db;
     border-radius: 8px;
     overflow: hidden;
+    width: 100%;
 }
 
 .day-header {
     background: #667eea;
     color: white;
-    padding: 15px 5px;
+    padding: 12px 5px;
     text-align: center;
     font-weight: bold;
+    font-size: 14px;
 }
 
+/* 🔧 핵심 수정: 날짜 셀 레이아웃 */
 .day-cell {
     background: white;
-    min-height: 120px;
-    padding: 8px;
+    min-height: 100px;
+    max-height: 120px;
+    padding: 6px;
     position: relative;
     cursor: pointer;
     transition: background 0.2s ease;
+    border: 1px solid #e5e7eb;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .day-cell:hover {
@@ -196,37 +206,54 @@ body {
 }
 
 .day-cell.other-month {
-    background: #f9f9f9;
-    color: #ccc;
+    background: #f9fafb;
+    color: #9ca3af;
 }
 
 .day-cell.today {
-    background: #fff5f5;
-    border: 2px solid #667eea;
+    background: #dbeafe;
+    border: 2px solid #3b82f6;
+    font-weight: bold;
 }
 
+/* 🔧 핵심 수정: 날짜 숫자 스타일 */
 .day-number {
     font-weight: bold;
-    margin-bottom: 5px;
+    font-size: 14px;
+    margin-bottom: 3px;
+    flex-shrink: 0;
+    line-height: 1;
 }
 
+/* 🔧 핵심 수정: 일정 아이템 스타일 */
 .event-item {
     background: #667eea;
     color: white;
-    font-size: 11px;
-    padding: 2px 4px;
-    border-radius: 3px;
-    margin-bottom: 2px;
+    font-size: 8px;
+    line-height: 10px;
+    padding: 1px 3px;
+    border-radius: 2px;
+    margin-bottom: 1px;
     cursor: pointer;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     transition: all 0.2s ease;
+    font-weight: bold;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    height: 12px;
+    display: flex;
+    align-items: center;
+    border-left: 3px solid transparent;
 }
 
 .event-item:hover {
     transform: scale(1.02);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    z-index: 10;
 }
 
 .sidebar {
@@ -558,6 +585,22 @@ body {
     }
 }
 
+/* 🔧 추가: 캘린더 로딩 상태 */
+.calendar-loading {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+    font-style: italic;
+}
+
+/* 🔧 추가: 일정 없음 상태 */
+.no-schedules {
+    text-align: center;
+    color: #999;
+    font-style: italic;
+    padding: 10px;
+}
+
 /* 반응형 디자인 */
 @media (max-width: 768px) {
     .main-content {
@@ -569,7 +612,19 @@ body {
     }
     
     .day-cell {
-        min-height: 80px;
+        min-height: 70px;
+        max-height: 90px;
+        padding: 4px;
+    }
+    
+    .event-item {
+        font-size: 7px;
+        height: 10px;
+        padding: 1px 2px;
+    }
+    
+    .day-number {
+        font-size: 12px;
     }
     
     .header-content {
@@ -624,5 +679,17 @@ body {
     
     .month-nav {
         justify-content: center;
+    }
+    
+    .day-cell {
+        min-height: 60px;
+        max-height: 80px;
+        padding: 3px;
+    }
+    
+    .event-item {
+        font-size: 6px;
+        height: 8px;
+        padding: 0px 2px;
     }
 }

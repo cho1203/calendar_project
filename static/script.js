@@ -10,6 +10,14 @@ const API_BASE = 'http://localhost:5000/api';
 // 초기화
 document.addEventListener('DOMContentLoaded', function() {
     console.log('페이지 로드 완료');
+    
+    // 저장된 토큰 확인
+    const savedToken = localStorage.getItem('token');
+    if (savedToken) {
+        authToken = savedToken;
+        console.log('저장된 토큰 발견:', authToken);
+    }
+    
     checkApiConnection();
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('quickDate').value = today;
@@ -225,7 +233,7 @@ async function login() {
     await loginUser(userId, password);
 }
 
-// 로그인 실행
+// 로그인 실행 - 토큰 localStorage 저장 추가
 async function loginUser(userId, password) {
     try {
         console.log(`로그인 시도: ${userId}`);
@@ -248,6 +256,9 @@ async function loginUser(userId, password) {
         
         if (result.success) {
             authToken = result.data.token;
+            // localStorage에도 저장
+            localStorage.setItem('token', result.data.token);
+            
             console.log('✅ 로그인 성공, 토큰:', authToken);
             
             showMessage(`🎉 ${result.data.user.name}님 환영합니다! (Flask MySQL)`, 'success');
@@ -276,7 +287,7 @@ async function loginUser(userId, password) {
     }
 }
 
-// 로그아웃
+// 로그아웃 - localStorage 정리 추가
 async function logout() {
     try {
         await fetch(`${API_BASE}/auth/logout`, {
@@ -287,7 +298,9 @@ async function logout() {
         console.error('로그아웃 오류:', error);
     }
     
+    // 모든 토큰 정리
     authToken = null;
+    localStorage.removeItem('token');
     schedules = [];
     calendars = [];
     currentCalendarId = null;
@@ -355,61 +368,270 @@ function closeModal(modalId) {
     }
 }
 
+// 🎨 일관된 캘린더 색상 반환 함수 (모든 곳에서 동일하게 사용)
+function getCalendarColor(calendarName) {
+    console.log('색상 결정 중인 캘린더 이름:', calendarName);
+    
+    if (!calendarName) {
+        console.log('캘린더 이름이 없음, 기본 색상 사용');
+        return '#667eea'; // 기본 색상
+    }
+    
+    const name = calendarName.toLowerCase().trim();
+    
+    // 더 정확한 매칭 로직
+    if (name.includes('내 캘린더') || name.includes('my calendar') || name.includes('내캘린더')) {
+        console.log('내 캘린더로 인식 - 초록색');
+        return '#10b981'; // 초록색
+    } else if (name.includes('개인') || name.includes('personal') || name.includes('private')) {
+        console.log('개인 캘린더로 인식 - 파란색');
+        return '#3b82f6'; // 파란색
+    } else if (name.includes('업무') || name.includes('work') || name.includes('business') || name.includes('office')) {
+        console.log('업무 캘린더로 인식 - 핑크색');
+        return '#ec4899'; // 핑크색
+    } else if (name.includes('조정부') || name.includes('부서') || name.includes('팀')) {
+        console.log('부서/팀 캘린더로 인식 - 초록색');
+        return '#10b981'; // 초록색 (내 캘린더와 동일)
+    }
+    
+    console.log('기타 캘린더로 인식 - 기본 색상');
+    return '#667eea'; // 기본 색상
+}
+
+// 🎨 일관된 캘린더 아이콘 반환 함수
+function getCalendarIcon(calendarName) {
+    if (!calendarName) return '📋';
+    
+    const name = calendarName.toLowerCase().trim();
+    
+    if (name.includes('내 캘린더') || name.includes('my calendar') || name.includes('내캘린더')) return '🏠';
+    if (name.includes('개인') || name.includes('personal') || name.includes('private')) return '👤';
+    if (name.includes('업무') || name.includes('work') || name.includes('business') || name.includes('office')) return '💼';
+    if (name.includes('조정부') || name.includes('부서') || name.includes('팀')) return '🏠';
+    return '📋';
+}
+
+// 🎨 일관된 캘린더 테두리 색상 반환 함수
+function getCalendarBorderColor(calendarName) {
+    if (!calendarName) return '#4338ca';
+    
+    const name = calendarName.toLowerCase().trim();
+    
+    if (name.includes('내 캘린더') || name.includes('my calendar') || name.includes('내캘린더')) {
+        return '#059669'; // 진한 초록색
+    } else if (name.includes('개인') || name.includes('personal') || name.includes('private')) {
+        return '#1d4ed8'; // 진한 파란색
+    } else if (name.includes('업무') || name.includes('work') || name.includes('business') || name.includes('office')) {
+        return '#be185d'; // 진한 핑크색
+    } else if (name.includes('조정부') || name.includes('부서') || name.includes('팀')) {
+        return '#059669'; // 진한 초록색
+    }
+    return '#4338ca'; // 기본 진한 색상
+}
+
 // 캘린더 목록 로드
 async function loadCalendars() {
     try {
-        console.log('=== 캘린더 로드 시작 ===');
-        console.log('토큰:', authToken);
+        const token = authToken || localStorage.getItem('token');
         
-        const response = await fetch(`${API_BASE}/calendars`, {
-            headers: { 
-                'Authorization': `Bearer ${authToken}`,
-                'Content-Type': 'application/json'
+        if (!token) {
+            console.log('❌ 토큰이 없습니다.');
+            return;
+        }
+        
+        const response = await fetch('/api/calendars', {
+            headers: {
+                'Authorization': `Bearer ${token}`
             }
         });
         
-        console.log('캘린더 API 응답 상태:', response.status);
+        const data = await response.json();
+        console.log('캘린더 목록:', data);
         
-        const result = await response.json();
-        console.log('캘린더 API 응답:', result);
-        
-        if (result.success) {
-            calendars = result.data.calendars;
-            console.log('✅ 로드된 캘린더:', calendars);
+        if (data.success) {
+            calendars = data.data.calendars;
             
-            const select = document.getElementById('calendarSelect');
-            select.innerHTML = '<option value="">캘린더를 선택하세요</option>';
+            const calendarSelect = document.getElementById('calendarSelect');
+            calendarSelect.innerHTML = '';
             
-            calendars.forEach(calendar => {
-                const option = document.createElement('option');
-                option.value = calendar.calendar_id;
-                option.textContent = calendar.calendar_name;
-                select.appendChild(option);
-            });
-            
+            // 캘린더 수 업데이트
             document.getElementById('calendarCount').textContent = calendars.length;
             
-            // 첫 번째 캘린더 자동 선택
-            if (calendars.length > 0) {
-                const firstCalendar = calendars[0];
-                select.value = firstCalendar.calendar_id;
-                currentCalendarId = firstCalendar.calendar_id;
-                console.log(`✅ 자동 선택된 캘린더: ${firstCalendar.calendar_name}`);
-                await loadSchedules();
-            } else {
-                console.log('⚠️ 사용 가능한 캘린더가 없습니다.');
-            }
-        } else {
-            console.log('❌ 캘린더 로드 실패:', result.message);
-            showMessage('캘린더 로드 실패: ' + result.message, 'error');
+            // 전체 일정 보기 옵션 추가
+            const allOption = document.createElement('option');
+            allOption.value = 'ALL_CALENDARS';
+            allOption.textContent = '📅 전체 일정 보기';
+            calendarSelect.appendChild(allOption);
+            
+            // 구분선 추가
+            const dividerOption = document.createElement('option');
+            dividerOption.disabled = true;
+            dividerOption.textContent = '─────────────────';
+            calendarSelect.appendChild(dividerOption);
+            
+            // 기존 캘린더들 추가 (아이콘과 함께)
+            calendars.forEach(calendar => {
+                const option = document.createElement('option');
+                option.value = calendar.calendarId;
+                
+                // 🎨 일관된 아이콘 사용
+                const icon = getCalendarIcon(calendar.calendarName);
+                option.textContent = `${icon} ${calendar.calendarName}`;
+                calendarSelect.appendChild(option);
+            });
+            
+            // 기본값을 전체 일정 보기로 설정
+            calendarSelect.value = 'ALL_CALENDARS';
+            
+            // 전체 일정 로드
+            await loadAllSchedules();
         }
     } catch (error) {
         console.error('캘린더 로드 오류:', error);
-        showMessage('캘린더 로드 중 오류 발생', 'error');
+        showMessage('캘린더 로드 중 오류가 발생했습니다.', 'error');
     }
 }
 
-// ✅ 수정된 일정 목록 로드 - 모든 일정 표시
+// 전체 일정 로드 함수 + 디버깅 강화
+async function loadAllSchedules() {
+    try {
+        showCalendarLoading(true);
+        
+        const token = authToken || localStorage.getItem('token');
+        
+        if (!token) {
+            console.log('❌ 토큰이 없습니다.');
+            return;
+        }
+        
+        // 캘린더가 없으면 다시 로드
+        if (!calendars || calendars.length === 0) {
+            const calendarResponse = await fetch('/api/calendars', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            const calendarData = await calendarResponse.json();
+            if (!calendarData.success) return;
+            
+            calendars = calendarData.data.calendars;
+        }
+        
+        console.log('전체 캘린더 목록:', calendars);
+        let allSchedules = [];
+        
+        // 각 캘린더에서 일정 가져오기
+        for (const calendar of calendars) {
+            try {
+                console.log(`캘린더 "${calendar.calendarName}" 일정 로드 중...`);
+                
+                const scheduleResponse = await fetch(`/api/schedules/${calendar.calendarId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                const scheduleData = await scheduleResponse.json();
+                if (scheduleData.success) {
+                    // 🎨 일관된 캘린더 정보를 각 일정에 추가 + 디버깅
+                    const schedulesWithCalendar = scheduleData.data.schedules.map(schedule => {
+                        const colorInfo = {
+                            ...schedule,
+                            calendarName: calendar.calendarName,
+                            calendarIcon: getCalendarIcon(calendar.calendarName),
+                            calendarColor: getCalendarColor(calendar.calendarName),
+                            calendarBorderColor: getCalendarBorderColor(calendar.calendarName)
+                        };
+                        
+                        console.log(`일정 "${schedule.title}" 색상 정보:`, {
+                            calendarName: calendar.calendarName,
+                            color: colorInfo.calendarColor,
+                            icon: colorInfo.calendarIcon
+                        });
+                        
+                        return colorInfo;
+                    });
+                    
+                    allSchedules = allSchedules.concat(schedulesWithCalendar);
+                    console.log(`캘린더 "${calendar.calendarName}"에서 ${schedulesWithCalendar.length}개 일정 로드됨`);
+                }
+            } catch (error) {
+                console.error(`캘린더 ${calendar.calendarId} 일정 로드 오류:`, error);
+            }
+        }
+        
+        // 날짜순으로 정렬
+        allSchedules.sort((a, b) => new Date(a.startTime || a.start_time) - new Date(b.startTime || b.start_time));
+        
+        console.log(`전체 일정 로드 완료: ${allSchedules.length}개`);
+        console.log('전체 일정 색상 정보:', allSchedules.map(s => ({ title: s.title, color: s.calendarColor, calendar: s.calendarName })));
+        
+        // 전역변수 업데이트
+        schedules = allSchedules;
+        
+        // 일정 수 업데이트
+        document.getElementById('scheduleCount').textContent = allSchedules.length;
+        
+        // 캘린더에 표시
+        renderCalendar();
+        loadTodayEvents();
+        
+    } catch (error) {
+        console.error('전체 일정 로드 오류:', error);
+        showMessage('일정 로드 중 오류가 발생했습니다.', 'error');
+    } finally {
+        showCalendarLoading(false);
+    }
+}
+
+// 캘린더 변경 시 처리
+async function onCalendarChange() {
+    const calendarSelect = document.getElementById('calendarSelect');
+    const selectedCalendar = calendarSelect.value;
+    
+    console.log('선택된 캘린더:', selectedCalendar);
+    
+    if (selectedCalendar === 'ALL_CALENDARS') {
+        // 전체 일정 보기
+        await loadAllSchedules();
+    } else if (selectedCalendar) {
+        // 특정 캘린더 일정 보기
+        currentCalendarId = selectedCalendar;
+        await loadSchedules();
+    }
+}
+
+// 로딩 상태 표시 함수
+function showCalendarLoading(show) {
+    const calendarGrid = document.querySelector('.calendar-grid');
+    if (!calendarGrid) return;
+    
+    const loadingDiv = document.querySelector('.calendar-loading');
+    
+    if (show) {
+        if (!loadingDiv) {
+            const loading = document.createElement('div');
+            loading.className = 'calendar-loading';
+            loading.textContent = '일정을 불러오는 중...';
+            calendarGrid.parentNode.insertBefore(loading, calendarGrid);
+        }
+        calendarGrid.style.opacity = '0.5';
+    } else {
+        if (loadingDiv) {
+            loadingDiv.remove();
+        }
+        calendarGrid.style.opacity = '1';
+    }
+}
+
+// 시간 포맷 헬퍼 함수
+function formatTime(timeString) {
+    const date = new Date(timeString);
+    return date.toLocaleTimeString('ko-KR', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false 
+    });
+}
+
+// 🎨 수정된 개별 캘린더 일정 로드 - 색상 정보 포함 + 디버깅
 async function loadSchedules() {
     const selectElement = document.getElementById('calendarSelect');
     currentCalendarId = selectElement.value;
@@ -418,14 +640,13 @@ async function loadSchedules() {
     console.log('선택된 캘린더 ID:', currentCalendarId);
     console.log('인증 토큰:', authToken);
     
-    if (!currentCalendarId) {
-        console.log('❌ 캘린더가 선택되지 않음');
-        schedules = [];
-        renderCalendar();
+    if (!currentCalendarId || currentCalendarId === 'ALL_CALENDARS') {
+        await loadAllSchedules();
         return;
     }
     
-    if (!authToken) {
+    const token = authToken || localStorage.getItem('token');
+    if (!token) {
         console.log('❌ 인증 토큰이 없음');
         return;
     }
@@ -436,7 +657,7 @@ async function loadSchedules() {
         
         const response = await fetch(url, {
             headers: { 
-                'Authorization': `Bearer ${authToken}`,
+                'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
             }
         });
@@ -447,9 +668,35 @@ async function loadSchedules() {
         console.log('일정 API 응답:', result);
         
         if (result.success) {
-            schedules = result.data.schedules;
+            // 🎨 개별 캘린더 일정에도 일관된 색상 정보 추가 + 디버깅
+            const currentCalendar = calendars.find(cal => cal.calendarId === currentCalendarId);
+            const calendarName = currentCalendar ? currentCalendar.calendarName : '';
+            
+            console.log('현재 캘린더 정보:', currentCalendar);
+            console.log('캘린더 이름:', calendarName);
+            
+            const schedulesWithColor = result.data.schedules.map(schedule => {
+                const colorInfo = {
+                    ...schedule,
+                    calendarName: calendarName,
+                    calendarIcon: getCalendarIcon(calendarName),
+                    calendarColor: getCalendarColor(calendarName),
+                    calendarBorderColor: getCalendarBorderColor(calendarName)
+                };
+                
+                console.log('일정 색상 정보:', {
+                    title: schedule.title,
+                    calendarName: calendarName,
+                    color: colorInfo.calendarColor,
+                    icon: colorInfo.calendarIcon
+                });
+                
+                return colorInfo;
+            });
+            
+            schedules = schedulesWithColor;
             console.log('✅ 로드된 일정 개수:', schedules.length);
-            console.log('일정 목록:', schedules);
+            console.log('색상이 적용된 일정 목록:', schedules);
             
             document.getElementById('scheduleCount').textContent = schedules.length;
             renderCalendar();
@@ -469,12 +716,14 @@ async function createCalendar() {
     const name = prompt('캘린더 이름을 입력하세요:');
     if (!name) return;
     
+    const token = authToken || localStorage.getItem('token');
+    
     try {
         const response = await fetch(`${API_BASE}/calendars`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
+                'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({
                 calendarName: name,
@@ -495,7 +744,7 @@ async function createCalendar() {
     }
 }
 
-// ✅ 수정된 캘린더 렌더링 - 일정 소유자별 색상 구분
+// 🎨 완전히 수정된 캘린더 렌더링 - 모든 캘린더에서 일관된 색상 적용
 function renderCalendar() {
     console.log('=== 캘린더 렌더링 시작 ===');
     console.log('현재 일정 개수:', schedules.length);
@@ -540,28 +789,41 @@ function renderCalendar() {
             return scheduleDate.toDateString() === cellDate.toDateString();
         });
         
-        daySchedules.forEach(schedule => {
+        daySchedules.forEach((schedule, index) => {
             const eventEl = document.createElement('div');
             eventEl.className = 'event-item';
             
-            // ✅ 일정 소유자에 따라 다른 스타일 적용
-            if (schedule.is_my_schedule) {
-                eventEl.style.backgroundColor = '#667eea';  // 내 일정 - 파란색
-                eventEl.style.borderLeft = '3px solid #4338ca';
-                eventEl.title = `${schedule.title} (내 일정)`;
-            } else {
-                eventEl.style.backgroundColor = '#10b981';  // 다른 사람 일정 - 초록색
-                eventEl.style.borderLeft = '3px solid #059669';
-                eventEl.title = `${schedule.title} (${schedule.owner_name}님의 일정)`;
-            }
+            // 🎨 일관된 색상 적용
+            const eventColor = schedule.calendarColor || getCalendarColor(schedule.calendarName);
+            const borderColor = schedule.calendarBorderColor || getCalendarBorderColor(schedule.calendarName);
+            const icon = schedule.calendarIcon || getCalendarIcon(schedule.calendarName);
             
-            // 일정 제목과 소유자 표시
-            eventEl.innerHTML = `
-                <div style="font-size: 10px; line-height: 12px;">
-                    <div style="font-weight: bold;">${schedule.title}</div>
-                    ${!schedule.is_my_schedule ? `<div style="opacity: 0.8; font-size: 9px;">${schedule.owner_name}</div>` : ''}
-                </div>
+            // 🔧 캘린더 레이아웃 수정 - 일정이 셀 안에 정확히 배치되도록
+            eventEl.style.cssText = `
+                background-color: ${eventColor};
+                border-left: 3px solid ${borderColor};
+                font-size: 9px;
+                line-height: 11px;
+                padding: 2px 4px;
+                margin: 1px 0;
+                border-radius: 3px;
+                cursor: pointer;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 100%;
+                box-sizing: border-box;
+                position: relative;
+                z-index: 1;
             `;
+            
+            // 일정 제목 표시 - 간소화
+            const titleText = schedule.title.length > 8 ? schedule.title.substring(0, 8) + '...' : schedule.title;
+            eventEl.innerHTML = `<span style="font-weight: bold; color: white;">${icon} ${titleText}</span>`;
+            
+            // 툴팁 추가
+            const tooltipText = `${schedule.calendarName || '캘린더'}\n${schedule.title}\n${formatTime(schedule.start_time || schedule.startTime)} - ${formatTime(schedule.end_time || schedule.endTime)}`;
+            eventEl.title = tooltipText;
             
             eventEl.onclick = () => showEventDetails(schedule);
             dayCell.appendChild(eventEl);
@@ -575,7 +837,7 @@ function renderCalendar() {
     console.log(`✅ 캘린더 렌더링 완료 - 총 ${totalEventsAdded}개 일정 표시`);
 }
 
-// ✅ 오늘의 일정 로드 (소유자 정보 포함)
+// 🎨 수정된 오늘의 일정 로드 - 일관된 색상 적용
 function loadTodayEvents() {
     const today = new Date();
     const todaySchedules = schedules.filter(schedule => {
@@ -585,7 +847,7 @@ function loadTodayEvents() {
     
     const todayEventsDiv = document.getElementById('todayEvents');
     if (todaySchedules.length === 0) {
-        todayEventsDiv.innerHTML = '<p>오늘 일정이 없습니다.</p>';
+        todayEventsDiv.innerHTML = '<p class="no-schedules">📅 오늘 일정이 없습니다.</p>';
     } else {
         todayEventsDiv.innerHTML = todaySchedules.map(schedule => {
             const time = new Date(schedule.start_time || schedule.startTime).toLocaleTimeString('ko-KR', {
@@ -593,13 +855,16 @@ function loadTodayEvents() {
                 minute: '2-digit'
             });
             
-            const ownerInfo = schedule.is_my_schedule ? '내 일정' : schedule.owner_name;
-            const backgroundColor = schedule.is_my_schedule ? '#667eea' : '#10b981';
+            // 🎨 일관된 색상 및 아이콘 적용
+            const backgroundColor = schedule.calendarColor || getCalendarColor(schedule.calendarName);
+            const borderColor = schedule.calendarBorderColor || getCalendarBorderColor(schedule.calendarName);
+            const icon = schedule.calendarIcon || getCalendarIcon(schedule.calendarName);
+            const calendarInfo = schedule.calendarName || '기본 캘린더';
             
-            return `<div class="event-item" style="margin-bottom: 5px; background: ${backgroundColor}; border-left: 3px solid ${schedule.is_my_schedule ? '#4338ca' : '#059669'}">
+            return `<div class="schedule-item" style="margin-bottom: 5px; background: ${backgroundColor}; border-left: 3px solid ${borderColor}; cursor: pointer;" onclick="showEventDetails(${JSON.stringify(schedule).replace(/"/g, '&quot;')})">
                 <div style="font-size: 11px;">
-                    <strong>${time} - ${schedule.title}</strong>
-                    <div style="font-size: 9px; opacity: 0.8;">${ownerInfo}</div>
+                    <strong>${icon} ${time} - ${schedule.title}</strong>
+                    <div style="font-size: 9px; opacity: 0.8;">${calendarInfo}</div>
                 </div>
             </div>`;
         }).join('');
@@ -631,8 +896,8 @@ function selectDate(date) {
 
 // 모달 관리
 function showAddEventModal() {
-    if (!currentCalendarId) {
-        showMessage('📅 먼저 사이드바에서 캘린더를 선택해주세요!', 'error');
+    if (!currentCalendarId || currentCalendarId === 'ALL_CALENDARS') {
+        showMessage('📅 먼저 사이드바에서 특정 캘린더를 선택해주세요!', 'error');
         return;
     }
     document.getElementById('addEventModal').style.display = 'block';
@@ -642,10 +907,12 @@ function showAddEventModal() {
 document.getElementById('addEventForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     
-    if (!currentCalendarId) {
-        showMessage('캘린더를 선택해주세요.', 'error');
+    if (!currentCalendarId || currentCalendarId === 'ALL_CALENDARS') {
+        showMessage('특정 캘린더를 선택해주세요.', 'error');
         return;
     }
+    
+    const token = authToken || localStorage.getItem('token');
     
     const eventData = {
         title: document.getElementById('eventTitle').value,
@@ -663,7 +930,7 @@ document.getElementById('addEventForm').addEventListener('submit', async functio
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
+                'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify(eventData)
         });
@@ -689,11 +956,12 @@ document.getElementById('addEventForm').addEventListener('submit', async functio
 document.getElementById('quickEventForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     
-    if (!currentCalendarId) {
-        showMessage('📅 먼저 사이드바에서 캘린더를 선택해주세요!', 'error');
+    if (!currentCalendarId || currentCalendarId === 'ALL_CALENDARS') {
+        showMessage('📅 먼저 사이드바에서 특정 캘린더를 선택해주세요!', 'error');
         return;
     }
     
+    const token = authToken || localStorage.getItem('token');
     const title = document.getElementById('quickTitle').value;
     const date = document.getElementById('quickDate').value;
     const time = document.getElementById('quickTime').value;
@@ -718,7 +986,7 @@ document.getElementById('quickEventForm').addEventListener('submit', async funct
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
+                'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify(eventData)
         });
@@ -741,19 +1009,18 @@ document.getElementById('quickEventForm').addEventListener('submit', async funct
     }
 });
 
-// script.js에서 기존 showEventDetails 함수를 찾아서 
-// 아래 코드로 완전히 교체하세요
-
-// ✅ 개선된 일정 세부정보 모달 표시 (삭제 기능 포함)
+// 🎨 수정된 일정 세부정보 모달 표시 - 일관된 색상 적용
 function showEventDetails(schedule) {
     const startDate = new Date(schedule.start_time || schedule.startTime).toLocaleString('ko-KR');
     const endDate = new Date(schedule.end_time || schedule.endTime).toLocaleString('ko-KR');
     
-    const ownerInfo = schedule.is_my_schedule ? '내 일정' : `${schedule.owner_name}님의 일정`;
-    const calendarInfo = schedule.calendar_name ? schedule.calendar_name : '';
+    // 🎨 일관된 색상 및 정보 설정
+    const eventColor = schedule.calendarColor || getCalendarColor(schedule.calendarName);
+    const icon = schedule.calendarIcon || getCalendarIcon(schedule.calendarName);
+    const calendarInfo = schedule.calendarName || schedule.calendar_name || '기본 캘린더';
     
     // 삭제 버튼은 내 일정일 때만 표시
-    const deleteButton = schedule.is_my_schedule ? 
+    const deleteButton = schedule.is_my_schedule !== false ? 
         `<button onclick="deleteScheduleFromModal('${schedule.id}')" class="btn" style="background: #dc2626; border-color: #dc2626; color: white; margin-left: 10px;">
             🗑️ 삭제
         </button>` : '';
@@ -764,17 +1031,12 @@ function showEventDetails(schedule) {
                 <button class="close-modal" onclick="closeModal('eventDetailModal')">&times;</button>
                 
                 <div style="display: flex; align-items: center; margin-bottom: 15px;">
-                    <div style="width: 20px; height: 20px; background: ${schedule.color || '#667eea'}; border-radius: 50%; margin-right: 10px;"></div>
-                    <h3 style="margin: 0;">${schedule.title}</h3>
+                    <div style="width: 20px; height: 20px; background: ${eventColor}; border-radius: 50%; margin-right: 10px;"></div>
+                    <h3 style="margin: 0;">${icon} ${schedule.title}</h3>
                 </div>
                 
                 <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                     <div style="display: flex; flex-direction: column; gap: 10px;">
-                        
-                        <div style="display: flex; align-items: center;">
-                            <span style="width: 80px; font-weight: bold; color: #374151;">👤 소유자:</span>
-                            <span>${ownerInfo}</span>
-                        </div>
                         
                         <div style="display: flex; align-items: center;">
                             <span style="width: 80px; font-weight: bold; color: #374151;">📅 캘린더:</span>
@@ -853,7 +1115,7 @@ function showEventDetails(schedule) {
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 }
 
-// 일정 삭제 함수 (모달에서 호출) - 새로 추가하는 함수
+// 일정 삭제 함수 (모달에서 호출)
 async function deleteScheduleFromModal(scheduleId) {
     const confirmed = confirm('⚠️ 이 일정을 삭제하시겠습니까?\n\n삭제된 일정은 복구할 수 없습니다.');
     
@@ -865,18 +1127,13 @@ async function deleteScheduleFromModal(scheduleId) {
         console.log(`일정 삭제 시도: ${scheduleId}`);
         showMessage('🗑️ 일정을 삭제하는 중...', 'info');
         
-        // 일정이 속한 캘린더 찾기
-        const schedule = schedules.find(s => s.id === scheduleId);
-        if (!schedule) {
-            showMessage('❌ 일정을 찾을 수 없습니다.', 'error');
-            return;
-        }
+        const token = authToken || localStorage.getItem('token');
         
         // 일정 삭제 API 호출 (DELETE 방식)
         const response = await fetch(`${API_BASE}/schedules/${scheduleId}`, {
             method: 'DELETE',
             headers: {
-                'Authorization': `Bearer ${authToken}`,
+                'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
             }
         });
@@ -891,7 +1148,12 @@ async function deleteScheduleFromModal(scheduleId) {
             closeModal('eventDetailModal');
             
             // 일정 목록 새로고침
-            await loadSchedules();
+            const calendarSelect = document.getElementById('calendarSelect');
+            if (calendarSelect.value === 'ALL_CALENDARS') {
+                await loadAllSchedules();
+            } else {
+                await loadSchedules();
+            }
             
         } else {
             showMessage(`❌ ${result.message || '일정 삭제에 실패했습니다.'}`, 'error');
@@ -905,14 +1167,20 @@ async function deleteScheduleFromModal(scheduleId) {
 
 // 데이터 새로고침
 async function refreshData() {
-    if (!authToken) return;
+    const token = authToken || localStorage.getItem('token');
+    if (!token) return;
     
     try {
         showMessage('🔄 Flask MySQL에서 데이터를 새로고침 중...', 'info');
         await loadCalendars();
-        if (currentCalendarId) {
+        
+        const calendarSelect = document.getElementById('calendarSelect');
+        if (calendarSelect.value === 'ALL_CALENDARS') {
+            await loadAllSchedules();
+        } else if (currentCalendarId) {
             await loadSchedules();
         }
+        
         showMessage('✅ 데이터가 새로고침되었습니다! (Flask MySQL)', 'success');
     } catch (error) {
         showMessage('🚫 데이터 새로고침 중 오류가 발생했습니다.', 'error');
